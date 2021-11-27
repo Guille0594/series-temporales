@@ -1,0 +1,247 @@
+---
+title: "Práctica 2"
+subtitle: "Técnicas de predicción de series temporales"
+author: "Guillermo González Díaz"
+date: "12/11/2021"
+output:
+  html_notebook:
+    highlight: kate
+    toc: yes
+    toc_depth: 2  
+---
+
+# Librerias
+
+```{r}
+library(tidyverse)
+library(tsibble)
+library(feasts)
+library(TSA)
+library(Hmisc)
+library(astsa)
+library(dynlm)
+library(tsoutliers)
+library(xts)
+library(forecast)
+library(urca)
+library(tseries)
+```
+
+# Lectura de datos:
+
+Leemos nuestra data y creamos un df con las dos series juntas. Función ts para crear una serie temporal. Dividimos nuestras dos series temporales:
+
+```{r}
+df <- read_csv("../practica_2/colgate_crest.csv")
+colgate <- ts(df$Colgate, start = c(1958, 1), frequency = 52.18)
+crest <- ts(df$Crest, start = c(1958, 1), frequency = 52.18)
+data <- cbind(colgate, crest)
+```
+
+# Plots
+
+Dibujamos nuestras series temporales. Usamos autoplot, que es como ggplot con series temporales, sin necesidad de decirle que se trata de una serie temporal.
+
+Vemos que existe TENDENCIA en ambas series y en sentidos contrarios, siendo crest de tendencia creciente y colgate de tendencia decreciente.
+
+```{r}
+autoplot(as_tsibble(colgate))
+autoplot(as_tsibble(crest))
+autoplot(data)+
+  labs(title = "Series temporales Colgate y Crest",
+       x="Semanas")
+```
+
+
+# Train/Test split
+
+A continuación dividimos nuestra muestra con train y test: Para ello, en el train nos quedamos con todas las semanas menos las 16 últimas, y en el tes con las 16 últimas:
+
+```{r}
+ts_colgate_train <- head(colgate, length(colgate) - 16)
+ts_crest_train <- head(crest, length(crest) - 16)
+
+ts_colgate_test <- tail(colgate, 16)
+ts_crest_test <- tail(crest, 16)
+
+ts_data_train <- cbind(ts_colgate_train, ts_crest_train)
+ts_data_test <- cbind(ts_colgate_test, ts_crest_test)
+
+autoplot(ts_colgate_train) + autolayer(ts_colgate_test)
+autoplot(ts_crest_train) + autolayer(ts_crest_test)
+```
+
+::: {.redbox}
+A continuación pasamos a realizar nuestros modelos ARIMA. Ruido blanco significa que nuestro modelo se ajusta bien cuando la media es igual a cero, la varainza es constante y no está serialmente correlacionada. Si esto ocurre decimos que hay ruido blanco y nuestro modelo se ajusta bien. 
+
+Recordemos que TIENE que ser estacionaria, entonces hay dos formas: bien con logaritmos, bien con diferencias. Probamos con algoritmos, y si no se puede haremos diferencias. vamos a ver si son estacionarias, ahora gráficamente:
+
+Es importante que exista estacionariedad en nuestro modelaje con ARIMA, es un requisito.
+Podemos ver que apenas ha variado, por lo tanto no hemos conseguido estacionariedad con el logaritmo. Veremos con diferencias. Podemos hacerle la prueba de dickie fuller, si el p valor es > 0.05 es que no es esatcionaria. El comando es adf.test:
+:::
+
+# Dickie-Fuller 
+
+Realizamos los test corresponientes para comprobar la estacionariedad de neustras series. Una vez que hemos comprobado que las series son esatcionarias, podemos pasar a realizar nuestro modelo ARIMA.
+
+```{r}
+adf.test(ts_crest_train, alternative = "stationary")
+adf.test(ts_colgate_train, alternative = "stationary")
+```
+# Correlacion:
+
+Queremos ver la función de autocorrelación y la función de autocorrelación parcial. Con estas medidas sabremos cuantas medias móviles y cuantos autoregresivos vamos a utilizar en nuestro modelo ARIMA. ACF (función de autocorrelación) y PCF (función de autocorrelación parcial) son los comandos que usaremos.
+
+PACF nos dice el numero de autoregresivos, y ACF el de medias móviles.
+
+Colgate: probaremos con 4 autoregresivos (pacf), con una media móvil (acf), de acuerdo a aquellas barras que se salen de las líneas azules. 
+
+Crest: probaremos con 2 autoregresivos y 1 media móvil. 
+
+```{r}
+acf(ts_colgate_train)
+pacf(ts_colgate_train)
+
+acf(ts_crest_train)
+pacf(ts_crest_train)
+```
+
+# Arima Colgate
+
+Lo ejecutamos con 4 autoregresivos, 0 diferencias y 1 media móvil.
+
+Muy importante aquí, no hacerlo sobre nuestra serie diferida, sino sobre la ORIGINAL. Cuando imprimimos el modelo, podemos ver los coeficientes para nuestros autoregresivos: ar1, ar2, ar3, ar4 y para nuestra media móvil, ma1. Debajo de ello, los errores estándar. 
+
+```{r}
+arima_colgate <- arima(ts_colgate_train, order = c(4, 0, 1))
+arima_colgate
+```
+
+# Arima Crest
+
+```{r}
+arima_crest <- arima(ts_crest_train, order = c(2, 0, 1))
+arima_crest
+```
+
+
+
+# Ljung Box Test
+
+Nos sirve para saber si hay o no hay ruido blanco. Si el p valor > 0.05, es que si que hay ruido blanco. Si eso ocurre, es que nuestro modelo se ajusta bien. Vemos que nuestro modelo se ajusta bien comprobando este valor, puesque que es 0.93. Cuanto más grande es este valor, es que existe más ruido blanco. Esto implica que la media se acerca a 0 y que la varianza es constante, nuestro modelo se ajusta bien.
+
+```{r}
+tsdiag(arima_colgate)
+Box.test(residuals(arima_colgate), type = "Ljung-Box")
+```
+
+
+# Error
+
+Vamos a comprobar que la media del error se aproxima a 0. 
+```{r}
+error_colgate=residuals(arima_colgate)
+plot(error_colgate)
+```
+
+
+# Autoarima Colgate
+
+Autoarima is a really usefull model to do forecast in the short-term.
+
+```{r}
+aut_colg <- auto.arima(ts_colgate_train,lambda=0)
+summary(aut_colg)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

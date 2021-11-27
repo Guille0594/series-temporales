@@ -1,0 +1,226 @@
+---
+title: "Práctica 2"
+subtitle: "Técnicas de predicción de series temporales"
+author: "Guillermo González Díaz"
+date: "12/11/2021"
+output: html_document
+---
+
+# Librerias
+
+```{r}
+library(tidyverse)
+library(tsibble)
+library(feasts)
+library(TSA)
+library(Hmisc)
+library(astsa)
+library(dynlm)
+library(tsoutliers)
+library(xts)
+library(forecast)
+library(urca)
+library(tseries)
+```
+
+# Leemos nuestra data y creamos un df con las dos series juntas. Función ts para crear una serie temporal. Dividimos nuestras dos series temporales:
+
+```{r}
+df <- read_csv("../practica_2/colgate_crest.csv")
+colgate <- ts(df$Colgate, start = c(1958, 1), frequency = 52.18)
+crest <- ts(df$Crest, start = c(1958, 1), frequency = 52.18)
+data <- cbind(colgate, crest)
+```
+
+# Dibujamos nuestras series temporales. Usamos autoplot, que es como ggplot con series temporales, sin necesidad de decirle que se trata de una serie temporal:
+# Vemos que existe TENDENCIA en ambas series y en sentidos contrarios, siendo crest de tendencia creciente y colgate de tendencia decreciente.
+
+```{r}
+autoplot(as_tsibble(colgate))
+autoplot(as_tsibble(crest))
+autoplot(data)+
+  labs(title = "Cuota de mercado Colgate y Crest",
+       x="Semanas")
+```
+# A continuación dividimos nuestra muestra con train y test: Para ello, en el train nos quedamos con todas las semanas menos las 16 últimas, y en el tes con las 16 últimas:
+
+```{r}
+ts_colgate_train <- head(colgate, length(colgate) - 16)
+ts_crest_train <- head(crest, length(crest) - 16)
+
+ts_colgate_test <- tail(colgate, 16)
+ts_crest_test <- tail(crest, 16)
+
+ts_data_train <- cbind(ts_colgate_train, ts_crest_train)
+ts_data_test <- cbind(ts_colgate_test, ts_crest_test)
+
+autoplot(ts_colgate_train) + autolayer(ts_colgate_test)
+autoplot(ts_crest_train) + autolayer(ts_crest_test)
+```
+
+# Prueba de estacionalidad de las series. Es estacionaria una vez que la diferenciamos. La hipótesis nula es estacionariedad. Entonces después de hacer las diferencias, vemos que el p valor es mucho más bajo que el valor crítico, entonces es estacionaria:
+
+# Esto que hacemos aquí es ilustrativo, puesto que Arima coge las series y si no son estacionarias las transforma, pero es una forma de verlo. 
+
+# Estacionariedad Colgate:
+```{r}
+ur.kpss(scale(ts_colgate_train)) %>% summary()
+ur.kpss(diff(ts_colgate_train)) %>% summary()
+```
+# Estacionariedad Crest
+```{r}
+ur.kpss(scale(ts_crest_train)) %>% summary()
+ur.kpss(diff(ts_crest_train)) %>% summary()
+```
+
+
+# Lo primero que queremos analizar es la detección de outliers, a simple vista podemos ver que uno coincidirá con la subida de Crest en 1960. Para ello, usamos la función tso (time series outliers), pero primero realizamos un AUTOARIMA:  
+
+# Recordemos lo que representa ARIMAX: AR: representa la regresión de la variable con sus valores pasados, es el valor autoregresivo. MA: Media movil ponderada de los errores pasados. X: variable o conjunto de variables, ayudan a hacer mejor pronóstico.
+
+#Para hacer el arimax se incluye el xreg. Es decir, podría ser predecir algo en base al IPC, que sería ese parámetro xgreg
+
+
+# A continuación pasamos a realizar nuestros modelos ARIMA. Ruido blanco significa que nuestro modelo se ajusta bien cuando la media es igual a cero, la varainza es constante y no está serialmente correlacionada. Si esto ocurre decimos que hay ruido blanco y nuestro modelo se ajusta bien. 
+
+# Recordemos que TIENE que ser estacionaria, entonces hay dos formas: bien con logaritmos, bien con diferencias. Probamos con algoritmos, y si no se puede haremos diferencias. vamos a ver si son estacionarias, ahora gráficamente:
+
+Es importante que exista estacionariedad en nuestro modelaje con ARIMA, es un requisito.
+Podemos ver que apenas ha variado, por lo tanto no hemos conseguido estacionariedad con el logaritmo. Veremos con diferencias. Podemos hacerle la prueba de dickie fuller, si el p valor es > 0.05 es que no es esatcionaria. El comando es adf.test:
+
+```{r}
+serielog_colg = log(ts_colgate_train)
+plot(serielog_colg)
+```
+
+```{r}
+autoplot(ts_crest_train)
+```
+# Si son series estacionarias realizando el test de Dickie-Fuller
+```{r}
+adf.test(ts_crest_train, alternative = "stationary")
+```
+# Aún así, si queremos ver gráficamente las diferencias es mejor ver las diferencias. Luego comprobaremos si ese p valor es aún más bajo. 
+```{r}
+ts_dcolgate_train <- diff(ts_colgate_train)
+ts_dcrest_train <- diff(ts_crest_train)
+ts_dcolgate_test <- diff(ts_colgate_test)
+ts_dcrest_test <- diff(ts_crest_test)
+
+plot(ts_dcolgate_train, col = "red", main = "Serie temporal de colgate")
+plot(ts_dcrest_train, col = "blue", main="Serie temporal de crest")
+```
+# A simple vista parecen estacionarios, vamos a hacerles la prueba para verlo:
+```{r}
+adf.test(ts_dcrest_train)
+adf.test(ts_dcolgate_train)
+```
+# Una vez tenemos estacionariedad, ya podemos hacer nuestro ARIMA. Pero para saber que valores vamos a meterle, tenemos que ver la función de autocorrelación y de parcial autocorrelation: 
+
+
+```{r}
+#ARIMA MODEL
+autoarima_colgate <- auto.arima(ts_colgate_train, lambda=0)
+summary(autoarima_colgate)
+
+# Análissi de residuos
+ggtsdisplay(autoarima_colgate$residuals)
+
+Box.test(autoarima_colgate$residuals,lag = 52, fitdf = 3, type = "Lj")
+
+# Forecast
+fCO=forecast(autoarima_colgate)
+
+autoplot(fCO) + ggtitle("ARIMA: Predicción Colgate")
+```
+
+Ahora detectamos outliers para colgate. Podemos ver que hay dos, uno a finales de 1959, cuando cae estrepitosamente, y otra caída importante en la semana 31 de 1960:
+
+# Outliers colgate:
+
+```{r}
+tso(y = as.ts(ts_colgate_train), types = c("LS", "AO"),
+    discard.method = "bottom-up", tsmethod = "auto.arima",
+    args.tsmethod = list(allowdrift = FALSE, ic = "bic"))
+```
+
+
+Hacemos lo mismo con Crest, primero un autoarima y después un detector de outliers. Viendo la gráfica del primer punto y a ojo, deberían salirnos, por lo menos dos outliers:
+
+```{r}
+#ARIMA MODEL
+autoarima_crest <- auto.arima(ts_crest_train, lambda=0)
+summary(autoarima_crest)
+
+# Análissi de residuos
+#ggtsdisplay(autoarima_colgate$residuals)
+
+#Box.test(autoarima_colgate$residuals,lag = 52.18, fitdf = 3, type = "Lj")
+
+# Forecast
+fCR=forecast(autoarima_crest)
+
+autoplot(fCR) + ggtitle("ARIMA: Predicción Crest")
+
+```
+
+# Outliers crest:
+
+Recordemos LS es la suma de los dos e implica cambio de nivel.
+AO (additive outlier) es otro tipo de atípico, en este caso que afecta a la serie temporal.
+Temporary Change
+
+```{r}
+tso(y = as.ts(ts_crest_train),
+    tsmethod = "auto.arima",
+    args.tsmethod = list(allowdrift = FALSE, ic = "bic"))
+```
+
+Pasamos a la realización de nuestro modelo de intervención de forma manual. El análisis de intervención es un modelo de función
+de transferencia estocástica, con el cual es posible interpretar la manera de incorporar los efectos al modelo
+de la serie temporal. Con el objetivo de evaluar el impacto de un evento en el comportamiento de la serie
+temporal, es poosible hacer intervenciones naturales o
+inducidas .
+
+En el modelo de intervención se usan los resultados obtenidos de la función TSO.
+
+# Modelo intervención Colgate:
+
+```{r}
+dummies=data.frame(
+           AO2002 = 1* (seq(ts_colgate_train) == 102),
+           LS1004 = 1* (seq(ts_colgate_train) >= 136)
+           )
+
+mod_int_colgate = arimax(ts_colgate_train, order=c(3,0,0),
+        seasonal = list(order=c(1,0,0), period = 52),
+        xreg = dummies,
+        method = 'ML')
+
+mod_int_colgate
+
+```
+
+```{r}
+plot(log(ts_colgate_train),ylab='Log(ts_colgate_train)')
+points(fitted(mod_int_colgate))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

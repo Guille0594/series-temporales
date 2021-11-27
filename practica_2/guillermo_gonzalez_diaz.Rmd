@@ -1,0 +1,331 @@
+---
+title: 'PRÁCTICA 2: COLGATE VS CREST'
+author: "Guillermo González Díaz"
+date: "14/11/2021"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+  html_document:
+    toc: yes
+    toc_depth: '2'
+subtitle: _Predicción de series temporales_
+---
+
+```{css, echo = FALSE}
+.orangebox {
+  border: 1px solid rgb(0, 102, 102);
+  padding: 10px 10px;
+  background-color: #FFFCCC;
+    border-radius: 5px;
+}
+
+.greenbox {
+  border: 1px solid rgb(0, 102, 102);
+  padding: 10px 10px;
+  background-color: #66FFCC;
+    border-radius: 5px;
+}
+
+
+.hr1 {
+    display: block;
+    height: 6px;
+    border: 0;
+    border-top: 4px solid rgba(255, 69, 0, 0.7);
+    margin: 1em 0;
+    padding: 0;
+}
+
+
+.comments {
+  border: 1px solid rgb(0, 102, 102);
+  padding: 10px 10px;
+  background-color: #CCCFFF;
+    border-radius: 5px;
+}
+```
+
+<!--FIN DEL ESTILO CSS-->
+
+::: {.greenbox}
+### **Conclusiones extraídas del trabajo:**
+- Los modelos AUTOARIMA se comportan bien con las series temporales estudiadas. 
+- Nuestras series temporales tienen tendencia, estacionariedad y no presentan estacionalidad.
+- Hemos visto el poder que puede tener sobre el mercado los comunicaciones realizadas por organismos oficiales
+- Después de hallar la función de transferencia, los valores predictivos son mucho más acertados. 
+:::
+
+
+```{r, results='hide', message=FALSE, echo=FALSE}
+library(tidyverse)
+library(tsibble)
+library(feasts)
+library(TSA)
+library(Hmisc)
+library(astsa)
+library(dynlm)
+library(tsoutliers)
+library(xts)
+library(forecast)
+library(urca)
+library(tseries)
+```
+
+
+```{r, results='hide', message=FALSE, echo=FALSE}
+df <- read_csv("../practica_2/colgate_crest.csv")
+colgate <- ts(df$Colgate, start = c(1958, 1), frequency = 52.18)
+crest <- ts(df$Crest, start = c(1958, 1), frequency = 52.18)
+data <- ts(cbind(colgate, crest))
+#autoplot(as_tsibble(colgate), title= "Serie temporal Colgate")
+#autoplot(as_tsibble(crest), title = "Serie temporal Crest")
+``` 
+
+# _Gráficos de nuestras series temporales_
+
+::: {.orangebox}
+Podemos observar varias cosas en estos gráficos. En primer lugar, ambas series tienen tendencia. Crest creciente y Colgate decreciente. Podemos ver que a partir de 1960, Crest supera en cuota de mercado a Colgate para mantenerse de ese modo. En cuanto a la estacionalidad, no observamos ninguna, ya que al tratarse de dentífricos sabemos que no son porductos que presenten estacionalidad. 
+
+La explicación, es el informe publicado por el Consejo de Terapéutica Dental de la American Dental Association (ADA), resaltando los benificios de esta marca frente a otras. Así, vemos como en el período seleccionado, Colgate pasó en solamente 5 años de una cuota de mercado del 40 % al 20 %, en beneficio de Crest, una marca nueva que en solo 5 años alcanzó máximos del 50 %.
+:::
+
+```{r, echo = FALSE,  message=FALSE}
+autoplot(data)+
+  labs(title = "Series temporales Colgate y Crest",
+       x="Semanas")
+```
+
+# _Train y Test_
+
+::: {.orangebox}
+Hemos dividido la muestra en train y test, pues uno de los objetivos del trabajo es predecir las últimas 16 semanas del período utilizando para ello modelos ARIMA. Así queda partida la muestra:
+:::
+
+```{r, results='hide', message=FALSE, echo=FALSE}
+ts_colgate_train <- head(colgate, length(colgate) - 16)
+ts_crest_train <- head(crest, length(crest) - 16)
+
+ts_colgate_test <- tail(colgate, 16)
+ts_crest_test <- tail(crest, 16)
+
+ts_data_train <- cbind(ts_colgate_train, ts_crest_train)
+ts_data_test <- cbind(ts_colgate_test, ts_crest_test)
+
+autoplot(ts_colgate_train) + autolayer(ts_colgate_test)
+autoplot(ts_crest_train) + autolayer(ts_crest_test)
+``` 
+
+```{r, results='hide', message=FALSE, echo=FALSE}
+aut_colg <- auto.arima(ts_colgate_train, lambda=0)
+summary(aut_colg)
+``` 
+
+# _Autorima Colgate y predicción 16 períodos_
+
+::: {.orangebox}
+En primer lugar realizamos un autoarima con las dos series. Representamos gráficamete los residuos (en este caso solamente los de Colgate, teniendo en cuenta que los de Crest se comportan de manera muy similar), donde podemos comprobar que se comportan como ruido blanco: la media es constante en torno a 0. Por ello podemos decir que los modelos se ajustan bien y podemos predecir con ellos. 
+
+Estos son los resultados de las predicciones, en azul los intervalos de confianza al 95 %:
+:::
+
+```{r, results='hide', message=FALSE, echo=FALSE, fig.show='hide', warning=FALSE}
+aut_colg <- auto.arima(ts_colgate_train, lambda=0)
+summary(aut_colg)
+fcast_colg <- forecast(aut_colg, h = 16)
+
+accuracy(aut_colg)
+``` 
+
+Análisis de los residuos de Colgate:
+```{r, results='hide', message=FALSE, echo=FALSE, warning=FALSE}
+checkresiduals(aut_colg)
+```
+
+```{r, results='hide', message=FALSE, echo=FALSE, warning=FALSE}
+autoplot(fcast_colg)+
+  labs(title = "Forecast Colgate 16 weeks")
+summary(fcast_colg)
+adf.test(aut_colg$residuals)
+``` 
+
+# _Autorima Crest y predicción 16 períodos_
+
+```{r, results='hide', message=FALSE, echo=FALSE, fig.show='hide', warning=FALSE}
+aut_crest <- auto.arima(ts_crest_train, lambda=0)
+summary(aut_crest)
+checkresiduals(aut_crest)
+fcast_crest <- forecast(aut_crest, h = 16)
+
+accuracy(aut_crest)
+``` 
+
+```{r, results='hide', message=FALSE, echo=FALSE, warning=FALSE}
+autoplot(fcast_crest)+
+  labs(title = "Forecast Crest 16 weeks")
+adf.test(aut_crest$residuals)
+``` 
+
+::: {.orangebox}
+A continuación hemos comparado nuestras predicciones (en rojo) con los valores reales. Vemos que nuestras predicciones, pese a ser lineas, se ajustan bastante bien a lo que es la media de los datos reales, por lo tanto podemos concluir que se trata de modelos fiables con buen comportamiento.
+:::
+
+```{r, results='hide', message=FALSE, echo=FALSE, warning=FALSE}
+colg_pred <- fcast_colg$mean
+plot(ts_colgate_test, 
+     ylab='Cuota de Mercado', 
+     main='COLGATE: Predicción / Realidad')
+lines(colg_pred, col='red')
+```
+
+```{r, results='hide', message=FALSE, echo=FALSE, warning=FALSE}
+crest_pred <- fcast_crest$mean
+plot(ts_crest_test, 
+     ylab='Cuota de Mercado', 
+     main='CREST: Predicción / Realidad')
+lines(crest_pred, col='red')
+```
+
+# _Valores atípicos_
+
+::: {.orangebox}
+Colgate: observamos dos valores atípicos en las series. Uno en la semana 50 de 1959, y el otro en la 32 de 1960. El primero podemos definirlo como un cambio temporal, puesto que pronto vuelve a su punto anterior y tendencia alcista. 
+
+Sin embargo, el segundo es el que coincide con el informe mencionado anteriormente, la semana 32 cayendo en agosto de 1960. Este podemos decir que es un atípico aditivo, puesto que afecta a la serie temporal. 
+:::
+
+```{r, results='hide', message=FALSE, echo=FALSE, warning=FALSE}
+outliers_colg <- tso(y = ts_colgate_train, types = c("AO", "LS", "TC"),
+                    discard.method = "bottom-up", 
+                    tsmethod = "auto.arima", 
+                    args.tsmethod = list(allowdrift = FALSE, ic = "bic"))
+
+outliers_idx_colg <- outliers_colg$outliers$ind
+plot(outliers_colg)
+```
+
+::: {.orangebox}
+Crest: Aquí hemos encontrado 3 atípicos. Uno en la semana 32 de 1960, que tiene el efecto contrario al mismo de Colgate. Otro en la semana 11 de 1961, que vemos que es puntual ya que se recupera rápidamente. Por último, observamos uno en la semana 40 de 1961, donde la cuota car pero se va recuperando poco a poco. 
+:::
+
+```{r, results='hide', message=FALSE, echo=FALSE, warning=FALSE}
+outliers_crest <- tso(y = ts_crest_train, types = c("AO", "LS", "TC"),
+                     discard.method = "bottom-up", 
+                     tsmethod = "auto.arima", 
+                     args.tsmethod = list(allowdrift = FALSE, ic = "bic"))
+
+outliers_idx_crest <- outliers_crest$outliers$ind
+plot(outliers_crest)
+```
+
+::: {.comments}
+Llegados a este punto, podemos confirmar la fuerza que tuvo y el gran impacto para la cuota de mercado de ambas marcas, la aprobación de Crest como "Categoría B" por la ADA, confirmando la efectividad del dentífrico ante las caries dentales. 
+
+Crest se mantendrá como rey del sector hasta los años 90. 
+:::
+
+# _Modelos de intervención_
+
+::: {.orangebox}
+En el punto anterior nos hemos enconrtado con valores atípicos en ambos casos. Como se trata de series temporales, no podemos limitarnos a eliminarlos. Una serie temporal es continua y no podemos crear discontinuidades quitando datos. Queremos ver el impacto que tienen sobre la serie de datos, y principalmente son modelos que se realizan con ARIMA.
+
+Estos valores tiene sus causas en el mercado y las estrategias de publicidad, y tienen su efecto en la tendencia de las series.
+
+A continuación representamos los coeficientes de nuestro modelo de intervención sobre ambas series temporales, y después pasamos a analizar un outlier en concreto, el de agosto de 1960 y el efecto tan inmediato que tuvo en Crest. 
+:::
+
+Modelo de intervención de colgate:
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+int_data_col=ts_colgate_train
+
+dummies_colg=data.frame(
+  AO1102=1*(seq(ts_colgate_train)==102),
+  LS1136=1*(seq(ts_colgate_train)>=136))
+
+mod_int_colg=arimax(int_data_col,order=c(3,0,0),
+                   seasonal=list(order=c(1,0,0),period=52),
+                   xreg=dummies_colg,
+                   method='ML')
+mod_int_colg
+# mod_int_colg$coef
+```
+
+Modelo de intervención de Crest:
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+int_data_crest=ts_crest_train
+dummies_crest=data.frame(
+  LS1136=1*(seq(ts_crest_train)>=136),
+  AO1167=1*(seq(ts_crest_train)==167),
+  TC1196=1*(seq(ts_crest_train)>=196))
+
+mod_int_crest=arimax(int_data_crest,order=c(3,1,0),
+                   seasonal=list(order=c(1,0,0),period=52),
+                   xreg=dummies_crest,
+                   method='ML')
+mod_int_crest
+# mod_int_crest$coef
+```
+
+::: {.orangebox}
+Aquí podemos ver la gráfica con lo efectos del ya mencionado evento. En crest podemos ver como tiene un efecto inmediato y positivo. Mirando esta gráfica podemos comprobar que se trata de una intervención escalón. 
+:::
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+# mod_int_crest$coef
+
+pulso136=1*(seq(ts_crest_train)==136)
+
+plot(ts(pulso136*(-0.0649)+
+        stats::filter(pulso136,filter=0.13739,method='recursive',side=1)*(-0.09916),
+        frequency=52,start=136), type='h',ylab='ADA effects', main = "Impulso escalón Crest" )
+
+abline(h=0)
+```
+
+# _Función de transferencia_
+
+::: {.orangebox}
+Por último. Para ello hemos modelizado con Arima, hemos comprobado el número de coeficientes. Despúes con el análisis visual de los coeficientes sacamos b, r y s. Con todo ello realizamos un nuevo modelo Arimax, que usaremos para predecir las últimas 16 semanas de nuestra serie tempral. Aquí tenemos el resultado, una predicción bastante más ajustada que antes.
+:::
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+# Modelizado con Arima
+mod0 <- arimax(ts_colgate_train,
+               order=c(1,0,0),
+               include.mean=TRUE,
+               xtransf=ts_crest_train,
+               transfer=list(c(0,15)),
+               method="ML")
+# summary(mod0)
+# Observamos los coeficientes, que son 15
+# mod0$coef
+# Identidicación de los parámetros b, r y s. 
+# plot(mod0$coef[3:18],type="h")
+arima_trans <- arimax(ts_colgate_train,
+                order=c(1,0,0),
+                include.mean=FALSE,
+                fixed=c(NA,NA),
+                xtransf=ts_crest_train,
+                transfer=list(c(0,0)),
+                method="ML")
+
+new_pred <- arimax(ts_colgate_train,
+                order=c(1,0,0),
+                include.mean=FALSE,
+                fixed=c(NA,NA,NA),
+                xreg=ts_crest_train,
+                xtransf=ts_crest_train,
+                transfer=list(c(0,0)),
+                method="ML")
+
+pred <- predict(new_pred, newxreg = ts_crest_test, n.ahead = 16)
+df<- as.data.frame(pred)['pred.Series.1'] 
+df_pred <- ts(cbind(df, as.data.frame(ts_colgate_test)))
+
+autoplot(df_pred, main = "Predicciones ajustadas", xlab = 'Semanas de 1963', ylab = "Share")
+```
+
+
+
+

@@ -1,0 +1,169 @@
+---
+title: 'PRÁCTICA 2: COLGATE VS CREST'
+subtitle: '_Predicción de series temporales_'
+author: "Guillermo González Díaz"
+date: "14/11/2021"
+output:
+  html_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{css, echo = FALSE}
+.orangebox {
+  border: 1px solid rgb(0, 102, 102);
+  padding: 10px 10px;
+  background-color: #FFFCCC;
+    border-radius: 5px;
+}
+
+
+.hr1 {
+    display: block;
+    height: 6px;
+    border: 0;
+    border-top: 4px solid rgba(255, 69, 0, 0.7);
+    margin: 1em 0;
+    padding: 0;
+}
+
+
+.comments {
+  border: 1px solid rgb(0, 102, 102);
+  padding: 10px 10px;
+  background-color: ;
+    border-radius: 5px;
+}
+```
+
+<!--FIN DEL ESTILO CSS-->
+
+::: {.redbox}
+**Conclusiones extraidas del trabajo:**
+1. 
+2.
+3.
+4.
+5.
+:::
+
+
+```{r, results='hide', message=FALSE, echo=FALSE}
+library(tidyverse)
+library(tsibble)
+library(feasts)
+library(TSA)
+library(Hmisc)
+library(astsa)
+library(dynlm)
+library(tsoutliers)
+library(xts)
+library(forecast)
+library(urca)
+library(tseries)
+```
+
+
+```{r, results='hide', message=FALSE, echo=FALSE}
+df <- read_csv("../practica_2/colgate_crest.csv")
+colgate <- ts(df$Colgate, start = c(1958, 1), frequency = 52.18)
+crest <- ts(df$Crest, start = c(1958, 1), frequency = 52.18)
+data <- ts(cbind(colgate, crest))
+#autoplot(as_tsibble(colgate), title= "Serie temporal Colgate")
+#autoplot(as_tsibble(crest), title = "Serie temporal Crest")
+``` 
+
+# _Gráficos de nuestras series temporales_
+
+::: {.orangebox}
+Podemos observar varias cosas en estos gráficos. En primer lugar ambas series tienen tendencia, Crest creciente y Colgate decreciente. Podemos ver que a partir de 1960, Crest supera en cuota de mercado a Colgate para mantenerse de ese modo.
+
+La explicación, es el informe publicado por el Consejo de Terapéutica Dental de la American Dental Association (ADA), resaltando los benificios de esta marca frente a otras. Así, vemos como en el período seleccionado, Colgate pasó en solamente 5 años de una cuota de mercado del 50 % al 20 %, en beneficio de Crest, una marca nueva que en solo 5 años alcanzó máximos del 50 %.
+:::
+
+```{r, echo = FALSE,  message=FALSE}
+autoplot(data)+
+  labs(title = "Series temporales Colgate y Crest",
+       x="Semanas")
+```
+
+# _Nuestra parte de Train y Test_
+
+::: {.orangebox}
+Hemos dividido la muestra en train y test, pues uno de los objetivos del trabajo es predecir las últimas 16 semanas del período utilizando para ello modelos ARIMA. ASí queda partida la muestra:
+:::
+
+```{r, results='hide', message=FALSE, echo=FALSE}
+ts_colgate_train <- head(colgate, length(colgate) - 16)
+ts_crest_train <- head(crest, length(crest) - 16)
+
+ts_colgate_test <- tail(colgate, 16)
+ts_crest_test <- tail(crest, 16)
+
+ts_data_train <- cbind(ts_colgate_train, ts_crest_train)
+ts_data_test <- cbind(ts_colgate_test, ts_crest_test)
+
+autoplot(ts_colgate_train) + autolayer(ts_colgate_test)
+autoplot(ts_crest_train) + autolayer(ts_crest_test)
+``` 
+
+```{r, results='hide', message=FALSE, echo=FALSE}
+aut_colg <- auto.arima(ts_colgate_train, lambda=0)
+summary(aut_colg)
+``` 
+
+# _Autorima Colgate y predicción 16 períodos_
+
+::: {.orangebox}
+En primer lugar realizamos un autoarima con las dos series. Representamos gráficamete los residuos, donde podemos comprobar que en ambas series se comportan como ruido blanco: la media es constante en torno a 0. Por ello podemos decir que los modelos se ajustan bien y podemos predecir con ellos. 
+
+Estos son los resultados de las predicciones, en azul los intervalos de confianza al 95 %:
+:::
+
+```{r, results='hide', message=FALSE, echo=FALSE, fig.show='hide', warning=FALSE}
+aut_colg <- auto.arima(ts_colgate_train, lambda=0)
+summary(aut_colg)
+checkresiduals(aut_colg)
+fcast_colg <- forecast(aut_colg, h = 16)
+
+
+adf.test(aut_colg$residuals)
+accuracy(aut_colg)
+``` 
+
+```{r, results='hide', message=FALSE, echo=FALSE, warning=FALSE}
+autoplot(fcast_colg)+
+  labs(title = "Forecast Colgate 16 weeks")
+summary(fcast_colg)
+``` 
+
+# _Autorima Crest y predicción 16 períodos_
+
+```{r, results='hide', message=FALSE, echo=FALSE, fig.show='hide', warning=FALSE}
+aut_crest <- auto.arima(ts_crest_train, lambda=0)
+summary(aut_crest)
+checkresiduals(aut_crest)
+fcast_crest <- forecast(aut_crest, h = 16)
+
+adf.test(aut_crest$residuals)
+accuracy(aut_crest)
+``` 
+
+```{r, results='hide', message=FALSE, echo=FALSE, warning=FALSE}
+autoplot(fcast_crest)+
+  labs(title = "Forecast Crest 16 weeks")
+``` 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
